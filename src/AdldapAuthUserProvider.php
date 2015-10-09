@@ -13,46 +13,32 @@ use Illuminate\Auth\EloquentUserProvider;
 class AdldapAuthUserProvider extends EloquentUserProvider
 {
     /**
-     * Retrieve a user by their unique identifier.
-     *
-     * @param  mixed  $identifier
-     *
-     * @return Authenticatable|null
+     * {@inheritDoc}
      */
     public function retrieveById($identifier)
     {
         $model = parent::retrieveById($identifier);
 
-        if ($model instanceof Authenticatable) {
-            $attributes = $this->getUsernameAttribute();
-
-            $key = key($attributes);
-
-            $query = Adldap::users()->search();
-
-            $query->whereEquals($attributes[$key], $model->{$key});
-
-            $user = $query->first();
-
-            if ($user instanceof User && $this->getBindUserToModel()) {
-                $model = $this->bindAdldapToModel($user, $model);
-            }
-        }
-
-        return $model;
+        return $this->discoverAdldapFromModel($model);
     }
 
     /**
-     * Retrieve a user by the given credentials.
-     *
-     * @param array $credentials
-     *
-     * @return Authenticatable|null
+     * {@inheritDoc}
+     */
+    public function retrieveByToken($identifier, $token)
+    {
+        $model = parent::retrieveByToken($identifier, $token);
+
+        return $this->discoverAdldapFromModel($model);
+    }
+
+    /**
+     * {@inheritDoc}
      */
     public function retrieveByCredentials(array $credentials)
     {
         // Get the search query for users only
-        $query = Adldap::users()->search();
+        $query = $this->newAdldapUserQuery();
 
         // Get the username input attributes
         $attributes = $this->getUsernameAttribute();
@@ -96,17 +82,34 @@ class AdldapAuthUserProvider extends EloquentUserProvider
      */
     protected function getModelFromAdldap(User $user, $password)
     {
-        $email = $user->getEmail();
+        // Get the username attributes
+        $attributes = $this->getUsernameAttribute();
 
-        $model = $this->createModel()->newQuery()->where(compact('email'))->first();
+        // Get the model key
+        $key = key($attributes);
 
-        if(!$model) {
-            $model = $this->createModel();
+        // Get the username from the AD model
+        $username = $user->{$attributes[$key]};
 
-            $model->email = $email;
-            $model->password = bcrypt($password);
+        // Make sure we retrieve the first username
+        // result if it's an array
+        if (is_array($username)) {
+            $username = Arr::get($username, 0);
         }
 
+        // Try to retrieve the model from the model key and AD username
+        $model = $this->createModel()->newQuery()->where([$key => $username])->first();
+
+        // Create the model instance of it isn't found
+        if(!$model) $model = $this->createModel();
+
+        // Set the username and password in case
+        // of changes in active directory
+        $model->{$key} = $username;
+        $model->password = bcrypt($password);
+
+        // Synchronize other active directory
+        // attributes on the model
         $model = $this->syncModelFromAdldap($user, $model);
 
         if($this->getBindUserToModel()) {
@@ -147,6 +150,35 @@ class AdldapAuthUserProvider extends EloquentUserProvider
     }
 
     /**
+     * Retrieves the Adldap User model from the
+     * specified Laravel model.
+     *
+     * @param mixed $model
+     *
+     * @return null|Authenticatable
+     */
+    protected function discoverAdldapFromModel($model)
+    {
+        if ($model instanceof Authenticatable && $this->getBindUserToModel()) {
+            $attributes = $this->getUsernameAttribute();
+
+            $key = key($attributes);
+
+            $query = $this->newAdldapUserQuery();
+
+            $query->whereEquals($attributes[$key], $model->{$key});
+
+            $user = $query->first();
+
+            if ($user instanceof User) {
+                $model = $this->bindAdldapToModel($user, $model);
+            }
+        }
+
+        return $model;
+    }
+
+    /**
      * Binds the Adldap User instance to the Eloquent model instance
      * by setting its `adldapUser` public property.
      *
@@ -160,6 +192,16 @@ class AdldapAuthUserProvider extends EloquentUserProvider
         $model->adldapUser = $user;
 
         return $model;
+    }
+
+    /**
+     * Returns a new Adldap user query.
+     *
+     * @return \Adldap\Query\Builder
+     */
+    protected function newAdldapUserQuery()
+    {
+        return Adldap::users()->search()->select($this->getSelectAttributes());
     }
 
     /**
@@ -182,7 +224,7 @@ class AdldapAuthUserProvider extends EloquentUserProvider
      */
     protected function getUsernameAttribute()
     {
-        return Config::get('adldap_auth.username_attribute', ['email' => ActiveDirectory::EMAIL]);
+        return Config::get('adldap_auth.username_attribute', ['username' => ActiveDirectory::ACCOUNT_NAME]);
     }
 
     /**
@@ -215,5 +257,16 @@ class AdldapAuthUserProvider extends EloquentUserProvider
     protected function getSyncAttributes()
     {
         return Config::get('adldap_auth.sync_attributes', ['name' => ActiveDirectory::COMMON_NAME]);
+    }
+
+    /**
+     * Retrieves the Aldldap select attributes when performing
+     * queries for authentication and binding for users.
+     *
+     * @return array
+     */
+    protected function getSelectAttributes()
+    {
+        return Config::get('adldap_auth.select_attributes', []);
     }
 }

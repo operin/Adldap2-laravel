@@ -10,6 +10,17 @@ use Illuminate\Support\Facades\App;
 
 class AdldapTest extends FunctionalTestCase
 {
+    public function setUp()
+    {
+        parent::setUp();
+
+        // Set auth configuration for email use since stock
+        // laravel only comes with an email field
+        $this->app['config']->set('adldap_auth.username_attribute', [
+            'email' => 'mail',
+        ]);
+    }
+
     public function testConfigurationNotFoundException()
     {
         $this->app['config']->set('adldap', null);
@@ -25,6 +36,16 @@ class AdldapTest extends FunctionalTestCase
         $this->assertTrue(app()->register('Adldap\Laravel\AdldapAuthServiceProvider'));
     }
 
+    public function testContractResolve()
+    {
+        $this->app['config']->set('adldap.auto_connect', false);
+
+        $adldap = $this->app->make('Adldap\Contracts\Adldap');
+
+        $this->assertInstanceOf('Adldap\Adldap', $adldap);
+        $this->assertInstanceOf('Adldap\Contracts\Adldap', $adldap);
+    }
+
     public function testAuthPasses()
     {
         $mockedBuilder = Mockery::mock('Adldap\Query\Builder');
@@ -38,6 +59,7 @@ class AdldapTest extends FunctionalTestCase
         $adUser = (new User([], $mockedBuilder))->setRawAttributes($rawAttributes);
 
         $mockedSearch = Mockery::mock('Adldap\Classes\Search');
+        $mockedSearch->shouldReceive('select')->once()->andReturn($mockedSearch);
 
         $mockedUsers = Mockery::mock('Adldap\Classes\Users');
 
@@ -80,6 +102,7 @@ class AdldapTest extends FunctionalTestCase
         $mockedBuilder = Mockery::mock('Adldap\Query\Builder');
 
         $mockedSearch = Mockery::mock('Adldap\Classes\Search');
+        $mockedSearch->shouldReceive('select')->once()->andReturn($mockedSearch);
 
         $mockedUsers = Mockery::mock('Adldap\Classes\Users');
 
@@ -106,6 +129,7 @@ class AdldapTest extends FunctionalTestCase
         $adUser = (new User([], $mockedBuilder))->setRawAttributes($rawAttributes);
 
         $mockedSearch = Mockery::mock('Adldap\Classes\Search');
+        $mockedSearch->shouldReceive('select')->once()->andReturn($mockedSearch);
 
         $mockedUsers = Mockery::mock('Adldap\Classes\Users');
 
@@ -123,6 +147,7 @@ class AdldapTest extends FunctionalTestCase
     public function testCredentialsKeyDoesNotExist()
     {
         $mockedSearch = Mockery::mock('Adldap\Classes\Search');
+        $mockedSearch->shouldReceive('select')->once()->andReturn($mockedSearch);
 
         $mockedUsers = Mockery::mock('Adldap\Classes\Users');
 

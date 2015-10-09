@@ -19,7 +19,7 @@ return [
     |
     */
 
-    'username_attribute' => ['email' => 'mail'],
+    'username_attribute' => ['username' => 'samaccountname'],
 
     /*
     |--------------------------------------------------------------------------
@@ -75,6 +75,27 @@ return [
     'sync_attributes' => [
 
         'name' => 'cn',
+
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Select Attributes
+    |--------------------------------------------------------------------------
+    |
+    | Attributes to select upon the user on authentication and binding.
+    |
+    | If no attributes are given inside the array, all attributes on the
+    | user are selected.
+    |
+    | ** Note ** : Keep in mind you must include attributes that you would
+    | like to synchronize, as well as your login attribute.
+    |
+    */
+
+    'select_attributes' => [
+
+        //
 
     ],
 
