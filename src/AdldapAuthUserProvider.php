@@ -7,6 +7,7 @@ use Adldap\Schemas\ActiveDirectory;
 use Adldap\Models\User;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Auth\EloquentUserProvider;
 
@@ -52,20 +53,23 @@ class AdldapAuthUserProvider extends EloquentUserProvider
         // Retrieve the first user result
         $user = $query->first();
 
-        // If the user is an Adldap user
+        // If the user is an Adldap User model instance.
         if($user instanceof User) {
-            // Retrieve the users login attribute
+            // Retrieve the users login attribute.
             $username = $user->{$this->getLoginAttribute()};
 
             if(is_array($username)) {
                 $username = Arr::get($username, 0);
             }
 
-            // Try to log the user in
-            if($this->authenticate($username, $credentials['password'])) {
+            // Get the password input array key.
+            $key = $this->getPasswordKey();
+
+            // Try to log the user in.
+            if($this->authenticate($username, $credentials[$key])) {
                 // Login was successful, we'll create a new
-                // Laravel model with the Adldap user
-                return $this->getModelFromAdldap($user, $credentials['password']);
+                // Laravel model with the Adldap user.
+                return $this->getModelFromAdldap($user, $credentials[$key]);
             }
         }
 
@@ -82,34 +86,36 @@ class AdldapAuthUserProvider extends EloquentUserProvider
      */
     protected function getModelFromAdldap(User $user, $password)
     {
-        // Get the username attributes
+        // Get the username attributes.
         $attributes = $this->getUsernameAttribute();
 
-        // Get the model key
+        // Get the model key.
         $key = key($attributes);
 
-        // Get the username from the AD model
+        // Get the username from the AD model.
         $username = $user->{$attributes[$key]};
 
         // Make sure we retrieve the first username
-        // result if it's an array
+        // result if it's an array.
         if (is_array($username)) {
             $username = Arr::get($username, 0);
         }
 
-        // Try to retrieve the model from the model key and AD username
+        // Try to retrieve the model from the model key and AD username.
         $model = $this->createModel()->newQuery()->where([$key => $username])->first();
 
-        // Create the model instance of it isn't found
+        // Create the model instance of it isn't found.
         if(!$model) $model = $this->createModel();
 
         // Set the username and password in case
-        // of changes in active directory
+        // of changes in active directory.
         $model->{$key} = $username;
-        $model->password = bcrypt($password);
+
+        // Sync the users password.
+        $model = $this->syncModelPassword($model, $password);
 
         // Synchronize other active directory
-        // attributes on the model
+        // attributes on the model.
         $model = $this->syncModelFromAdldap($user, $model);
 
         if($this->getBindUserToModel()) {
@@ -135,16 +141,43 @@ class AdldapAuthUserProvider extends EloquentUserProvider
             $adValue = $user->{$adField};
 
             if(is_array($adValue)) {
+                // If the AD Value is an array, we'll
+                // retrieve the first value.
                 $adValue = Arr::get($adValue, 0);
             }
 
             $model->{$modelField} = $adValue;
         }
 
-        // Only save models that contain changes
+        // Only save models that contain changes.
         if(count($model->getDirty()) > 0) {
             $model->save();
         }
+
+        return $model;
+    }
+
+    /**
+     * Syncs the models password with the specified password.
+     *
+     * @param Authenticatable $model
+     * @param string          $password
+     *
+     * @return Authenticatable
+     */
+    protected function syncModelPassword(Authenticatable $model, $password)
+    {
+        if ($model instanceof Model && $model->hasSetMutator('password')) {
+            // If the model has a set mutator for the password then
+            // we'll assume that the dev is using their
+            // own encryption method for passwords.
+            $model->password = $password;
+
+            return $model;
+        }
+
+        // Always encrypt the model password by default.
+        $model->password = bcrypt($password);
 
         return $model;
     }
@@ -225,6 +258,17 @@ class AdldapAuthUserProvider extends EloquentUserProvider
     protected function getUsernameAttribute()
     {
         return Config::get('adldap_auth.username_attribute', ['username' => ActiveDirectory::ACCOUNT_NAME]);
+    }
+
+    /**
+     * Returns the password key to retrieve the
+     * password from the user input array.
+     *
+     * @return mixed
+     */
+    protected function getPasswordKey()
+    {
+        return Config::get('adldap_auth.password_key', 'password');
     }
 
     /**
